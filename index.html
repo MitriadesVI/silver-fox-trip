@@ -62,6 +62,10 @@
       this.load.image('mainmenu','assets/mainmenu.png');// fondo del menú
       // NUEVO: Asset para explosión
       this.load.image('explosion','assets/explosion.png');
+      // NUEVO: Nuevos tipos de botellas
+      this.load.image('tapaverde','assets/tapaverde.png');
+      this.load.image('clubdorada','assets/clubdorada.png');
+      this.load.image('aguardientereal','assets/aguardientereal.png');
     }
     create(){ this.scene.start('MainMenu'); }
   }
@@ -100,7 +104,7 @@
       this.invulnTween=null;   // para no dejar alpha colgada
       this.dragging=false;
       this.leftPressed=false; this.rightPressed=false;
-      this.timers={obs:0,pow:0,ven:0,pol:0,moto:0};
+      this.timers={obs:0,pow:0,ven:0,pol:0,moto:0,newBottles:0}; // Timer unificado para nuevas botellas
     }
     create(){
       // Carretera
@@ -118,6 +122,10 @@
       // Grupos
       this.beers=this.physics.add.group();
       this.whiskys=this.physics.add.group();
+      // NUEVO: Grupos para las nuevas botellas
+      this.tapaverdes=this.physics.add.group();    // zigzag
+      this.clubdoradas=this.physics.add.group();   // diagonal  
+      this.aguardientes=this.physics.add.group();  // rebote lateral
       this.powerups=this.physics.add.group();    // powerup.png (vida)
       this.venecas=this.physics.add.group();     // veneca.png (nitro)
       this.polices=this.physics.add.group();
@@ -126,6 +134,10 @@
       // Colisiones
       this.physics.add.overlap(this.player,this.beers,(p,o)=>this.handleHit(p,o),null,this);
       this.physics.add.overlap(this.player,this.whiskys,(p,o)=>this.handleHit(p,o),null,this);
+      // NUEVO: Colisiones para las nuevas botellas
+      this.physics.add.overlap(this.player,this.tapaverdes,(p,o)=>this.handleHit(p,o),null,this);
+      this.physics.add.overlap(this.player,this.clubdoradas,(p,o)=>this.handleHit(p,o),null,this);
+      this.physics.add.overlap(this.player,this.aguardientes,(p,o)=>this.handleHit(p,o),null,this);
       this.physics.add.overlap(this.player,this.polices,(p,o)=>this.handleHit(p,o),null,this);
       this.physics.add.overlap(this.player,this.motos,(p,o)=>this.handleHit(p,o),null,this);
       this.physics.add.overlap(this.player,this.powerups,(p,o)=>this.handleCollectPowerUp(p,o),null,this);
@@ -164,9 +176,18 @@
       this.rightZone.on('pointerup',()=>this.rightPressed=false);
       this.rightZone.on('pointerout',()=>this.rightPressed=false);
 
-      // Arrastre del coche
-      this.input.on('pointerdown',(p)=>{this.dragging=true; this.player.x=Phaser.Math.Clamp(p.x,CLAMP_X.min,CLAMP_X.max);});
-      this.input.on('pointermove',(p)=>{if(this.dragging){this.player.x=Phaser.Math.Clamp(p.x,CLAMP_X.min,CLAMP_X.max);}});
+      // ARREGLADO: Arrastre del coche SIN interferir con botón nitro
+      this.input.on('pointerdown',(p)=>{
+        // Ignorar si toca el área del botón nitro
+        if(p.x > GAME_W-110 && p.y > GAME_H-110) return;
+        this.dragging=true; 
+        this.player.x=Phaser.Math.Clamp(p.x,CLAMP_X.min,CLAMP_X.max);
+      });
+      this.input.on('pointermove',(p)=>{
+        if(this.dragging && !(p.x > GAME_W-110 && p.y > GAME_H-110)){
+          this.player.x=Phaser.Math.Clamp(p.x,CLAMP_X.min,CLAMP_X.max);
+        }
+      });
       this.input.on('pointerup',()=>{this.dragging=false;});
 
       // Botón Nitro
@@ -217,6 +238,27 @@
     // Veneca: nitro y puntos
     spawnVeneca(){
       const it=this.spawnItem('veneca',180,0.14,this.venecas);
+      return it;
+    }
+
+    // NUEVAS BOTELLAS CON PATRONES ÚNICOS
+    spawnTapaVerde(){
+      const it=this.spawnItem('tapaverde',200,0.15,this.tapaverdes);
+      it.setData('damage',{life:-15}); // Tapa Verde -15
+      it.setData('zigzag',{amplitude:80, frequency:0.003, baseX:it.x});
+      return it;
+    }
+    spawnClubDorada(){
+      const it=this.spawnItem('clubdorada',180,0.16,this.clubdoradas);
+      it.setData('damage',{life:-18}); // Club Dorada -18
+      const direction = Math.random() < 0.5 ? -1 : 1;
+      it.setVelocityX(120 * direction); // Movimiento diagonal
+      return it;
+    }
+    spawnAguardienteReal(){
+      const it=this.spawnItem('aguardientereal',220,0.14,this.aguardientes);
+      it.setData('damage',{life:-22}); // Aguardiente Real -22
+      it.setData('bounce',{speed:150, direction:1}); // Rebote lateral
       return it;
     }
 
@@ -328,19 +370,39 @@
         gameState.nitro=Math.min(100,gameState.nitro+10*dt);
       }
 
-      // Spawns
-      this.timers.obs+=dtMs; this.timers.pow+=dtMs; this.timers.ven+=dtMs; this.timers.pol+=dtMs; this.timers.moto+=dtMs;
-      const base=650 - gameState.level*20;
-      if(this.timers.obs>Math.max(250,base)){ this.timers.obs=0; Math.random()<0.55?this.spawnBeer():this.spawnWhisky(); }
-      if(this.timers.pow>1500){ this.timers.pow=0; this.spawnPower(); }
-      if(this.timers.ven>4200){ this.timers.ven=0; this.spawnVeneca(); }
-      if(this.timers.pol>(5200 - Math.min(3000,gameState.level*250))){ this.timers.pol=0; this.spawnPolice(); }
-      // MEJORADO: Moto más frecuente desde nivel 2
-      if(this.timers.moto>(3000 - Math.min(2000,gameState.level*300))){ this.timers.moto=0; this.spawnMotoPolice(); }
+      // Spawns - REBALANCEADOS para evitar saturación
+      this.timers.obs+=dtMs; this.timers.pow+=dtMs; this.timers.ven+=dtMs; 
+      this.timers.pol+=dtMs; this.timers.moto+=dtMs; this.timers.newBottles+=dtMs;
+      
+      const base=800 - gameState.level*25; // Más espaciado entre obstáculos
+      
+      // Botellas básicas (menos frecuentes)
+      if(this.timers.obs>Math.max(400,base)){ 
+        this.timers.obs=0; 
+        if(Math.random()<0.4) this.spawnBeer();
+        else this.spawnWhisky();
+      }
+      
+      // NUEVAS BOTELLAS - spawn alternativo para variedad
+      if(this.timers.newBottles>Math.max(600,base*0.8)){ 
+        this.timers.newBottles=0; 
+        const rand = Math.random();
+        if(rand < 0.33) this.spawnTapaVerde();
+        else if(rand < 0.66) this.spawnClubDorada(); 
+        else this.spawnAguardienteReal();
+      }
+      
+      if(this.timers.pow>1800){ this.timers.pow=0; this.spawnPower(); } // Menos powerups
+      if(this.timers.ven>5000){ this.timers.ven=0; this.spawnVeneca(); } // Menos venecas
+      if(this.timers.pol>(6000 - Math.min(3500,gameState.level*200))){ this.timers.pol=0; this.spawnPolice(); }
+      if(this.timers.moto>(3500 - Math.min(2000,gameState.level*250))){ this.timers.moto=0; this.spawnMotoPolice(); }
 
       // IA Policía
       this.updatePoliceAI();
       this.updateMotoAI();
+      
+      // NUEVO: Patrones de movimiento únicos para las nuevas botellas
+      this.updateBottlePatterns();
 
       // NUEVO: Conteo de policías esquivados cuando pasan la pantalla
       this.polices.children.iterate(pol => {
@@ -363,8 +425,8 @@
       this.barNitro.width=140*(gameState.nitro/100);
       this.barLife.width=140*(gameState.life/100);
 
-      // Limpieza
-      [this.beers,this.whiskys,this.polices,this.motos,this.powerups,this.venecas].forEach(g=>{
+      // Limpieza - ACTUALIZADO con nuevas botellas
+      [this.beers,this.whiskys,this.tapaverdes,this.clubdoradas,this.aguardientes,this.polices,this.motos,this.powerups,this.venecas].forEach(g=>{
         g.children.each(s=>{ if(s && (s.y>GAME_H+80 || s.y<-120)) s.destroy(); });
       });
     }
@@ -388,6 +450,43 @@
         const dx=this.player.x - m.x;
         const chase=100 + gameState.level*10;
         m.setVelocityX(Phaser.Math.Clamp(dx*2,-chase,chase));
+      });
+    }
+
+    // NUEVO: Patrones de movimiento únicos para nuevas botellas
+    updateBottlePatterns(){
+      // Tapa Verde - Zigzag
+      this.tapaverdes.children.iterate(bottle => {
+        if(!bottle) return;
+        const zigzagData = bottle.getData('zigzag');
+        if(zigzagData) {
+          const elapsed = this.time.now * zigzagData.frequency;
+          const offsetX = Math.sin(elapsed) * zigzagData.amplitude;
+          bottle.x = Phaser.Math.Clamp(zigzagData.baseX + offsetX, 50, 430);
+        }
+      });
+      
+      // Club Dorada - Ya tiene movimiento diagonal por velocityX
+      this.clubdoradas.children.iterate(bottle => {
+        if(!bottle) return;
+        // Rebote en bordes
+        if(bottle.x <= 50 || bottle.x >= 430) {
+          bottle.setVelocityX(bottle.body.velocity.x * -1);
+        }
+      });
+      
+      // Aguardiente Real - Rebote lateral
+      this.aguardientes.children.iterate(bottle => {
+        if(!bottle) return;
+        const bounceData = bottle.getData('bounce');
+        if(bounceData) {
+          bottle.setVelocityX(bounceData.speed * bounceData.direction);
+          if(bottle.x <= 50) {
+            bottle.setData('bounce', {speed: bounceData.speed, direction: 1});
+          } else if(bottle.x >= 430) {
+            bottle.setData('bounce', {speed: bounceData.speed, direction: -1});
+          }
+        }
       });
     }
 
