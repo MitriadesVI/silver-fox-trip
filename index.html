@@ -33,6 +33,7 @@
   }
   const gameState=new GameState(); gameState.reset();
 
+  /* ================== PRELOAD ================== */
   class Preload extends Phaser.Scene{
     constructor(){super('Preload')}
     preload(){
@@ -44,28 +45,45 @@
       this.load.image('police','assets/police.png');
       this.load.image('motopolice','assets/motopolice.png'); // moto
       this.load.image('powerup','assets/powerup.png');  // bolsita (vida)
-      this.load.image('veneca','assets/veneca.png');    // power-up nuevo
+      this.load.image('veneca','assets/veneca.png');    // power-up nuevo (nitro)
+      this.load.image('mainmenu','assets/mainmenu.png');// fondo del menú
     }
     create(){ this.scene.start('MainMenu'); }
   }
 
+  /* ================== MENÚ ================== */
   class MainMenu extends Phaser.Scene{
     constructor(){super('MainMenu')}
     create(){
-      this.add.tileSprite(GAME_W/2,GAME_H/2,GAME_W,GAME_H,'road');
+      // Fondo con cover
+      const bg = this.add.image(GAME_W/2, GAME_H/2, 'mainmenu');
+      const s = Math.max(GAME_W / bg.width, GAME_H / bg.height);
+      bg.setScale(s).setScrollFactor(0);
+
+      // oscurecer un poco para contraste
+      this.add.rectangle(GAME_W/2, GAME_H/2, GAME_W, GAME_H, 0x000000, 0.25);
+
       this.add.text(GAME_W/2,70,'STREET RACER',{fontSize:'28px',fill:'#00ffff',stroke:'#001d1d',strokeThickness:6}).setOrigin(0.5);
-      const btn=this.add.text(GAME_W/2,300,'JUGAR',{fontSize:'26px',fill:'#ffff00',backgroundColor:'#006666',padding:{x:20,y:10},stroke:'#ffffff',strokeThickness:2})
-        .setOrigin(0.5).setInteractive({useHandCursor:true});
+
+      const btn=this.add.text(GAME_W/2,300,'JUGAR',{
+        fontSize:'26px',fill:'#ffff00',backgroundColor:'#006666',
+        padding:{x:20,y:10},stroke:'#ffffff',strokeThickness:2
+      }).setOrigin(0.5).setInteractive({useHandCursor:true});
       btn.on('pointerdown',()=>this.scene.start('Game'));
-      this.add.text(GAME_W/2,360,'Móvil: arrastra el coche o toca los lados.\nBotón NITRO a la derecha.',{fontSize:'14px',fill:'#e0ffff',align:'center'}).setOrigin(0.5)
+
+      this.add.text(GAME_W/2,360,'Móvil: arrastra el coche o toca los lados.\nBotón NITRO a la derecha.',{
+        fontSize:'14px',fill:'#e0ffff',align:'center'
+      }).setOrigin(0.5);
     }
   }
 
+  /* ================== JUEGO ================== */
   class Game extends Phaser.Scene{
     constructor(){super('Game')}
     init(){
       gameState.reset();
       this.invuln=false;
+      this.invulnTween=null;   // <— control tween para no dejar alpha colgada
       this.dragging=false;
       this.leftPressed=false; this.rightPressed=false;
       this.timers={obs:0,pow:0,ven:0,pol:0,moto:0};
@@ -74,9 +92,14 @@
       // Carretera completa
       this.road=this.add.tileSprite(GAME_W/2,GAME_H/2,GAME_W,GAME_H,'road');
 
-      // Jugador
-      this.player=this.physics.add.sprite(GAME_W/2,GAME_H-120,'player').setDepth(2);
-      this.player.setSize(this.player.width*0.42,this.player.height*0.6,true);
+      // === Jugador (tamaño antiguo + hitbox justa) ===
+      this.player = this.physics.add.sprite(GAME_W/2, GAME_H - 120, 'player').setDepth(2);
+      this.player.setScale(0.20);
+      const dw=this.player.displayWidth, dh=this.player.displayHeight;
+      const bw=dw*0.42, bh=dh*0.60;
+      this.player.body.setSize(bw,bh);
+      this.player.body.setOffset((dw-bw)/2,(dh-bh)/2);
+      this.player.setAlpha(1); // por si vienes de un game over en medio de un blink
 
       // Grupos
       this.beers=this.physics.add.group();
@@ -94,34 +117,24 @@
       this.physics.add.overlap(this.player,this.powerups,(p,o)=>this.handleCollectPowerUp(p,o),null,this);
       this.physics.add.overlap(this.player,this.venecas,(p,o)=>this.handleCollectVeneca(p,o),null,this);
 
-      // HUD (reemplazar bloque actual)
-this.hud = this.add.container(0, 0).setDepth(10);
+      // HUD
+      this.hud = this.add.container(0, 0).setDepth(10);
+      const hudBg = this.add.rectangle(0, 0, GAME_W, 90, 0x000d0d, 0.45).setOrigin(0);
+      this.hud.add(hudBg);
 
-// fondo del HUD
-const hudBg = this.add.rectangle(0, 0, GAME_W, 90, 0x000d0d, 0.45).setOrigin(0);
-this.hud.add(hudBg);
+      this.txtLife  = this.add.text(16, 12, 'Vida: 100', { fontSize:'18px', fill:'#00ffbf' });
+      this.txtScore = this.add.text(16, 34, 'Puntos: 0', { fontSize:'18px', fill:'#ffffff' });
+      this.txtLevel = this.add.text(16, 56, 'Nivel: 1',  { fontSize:'18px', fill:'#ffde59' });
+      const nitroLbl = this.add.text(320, 10, 'Nitro',   { fontSize:'14px', fill:'#aaffff' });
+      const vidaLbl  = this.add.text(320, 44, 'Vida',    { fontSize:'14px', fill:'#aaffff' });
 
-// textos
-this.txtLife  = this.add.text(16, 12, 'Vida: 100', { fontSize:'18px', fill:'#00ffbf' });
-this.txtScore = this.add.text(16, 34, 'Puntos: 0', { fontSize:'18px', fill:'#ffffff' });
-this.txtLevel = this.add.text(16, 56, 'Nivel: 1',  { fontSize:'18px', fill:'#ffde59' });
-const nitroLbl = this.add.text(320, 10, 'Nitro',   { fontSize:'14px', fill:'#aaffff' });
-const vidaLbl  = this.add.text(320, 44, 'Vida',    { fontSize:'14px', fill:'#aaffff' });
+      this.barNitroBg = this.add.rectangle(320, 28, 140, 12, 0x003333).setOrigin(0,0);
+      this.barNitro   = this.add.rectangle(320, 28, 140, 12, 0x00ffff).setOrigin(0,0);
+      this.barLifeBg  = this.add.rectangle(320, 62, 140, 12, 0x330000).setOrigin(0,0);
+      this.barLife    = this.add.rectangle(320, 62, 140, 12, 0xff4d4d).setOrigin(0,0);
 
-// barras
-this.barNitroBg = this.add.rectangle(320, 28, 140, 12, 0x003333).setOrigin(0,0);
-this.barNitro   = this.add.rectangle(320, 28, 140, 12, 0x00ffff).setOrigin(0,0);
-this.barLifeBg  = this.add.rectangle(320, 62, 140, 12, 0x330000).setOrigin(0,0);
-this.barLife    = this.add.rectangle(320, 62, 140, 12, 0xff4d4d).setOrigin(0,0);
-
-// agregar todo al container
-this.hud.add([
-  this.txtLife, this.txtScore, this.txtLevel,
-  nitroLbl, vidaLbl,
-  this.barNitroBg, this.barNitro,
-  this.barLifeBg,  this.barLife
-]);
-
+      this.hud.add([ this.txtLife, this.txtScore, this.txtLevel,
+        nitroLbl, vidaLbl, this.barNitroBg, this.barNitro, this.barLifeBg, this.barLife ]);
 
       // Controles
       this.cursors=this.input.keyboard.createCursorKeys();
@@ -199,11 +212,16 @@ this.hud.add([
       item.destroy();
 
       gameState.life=Phaser.Math.Clamp(gameState.life+data.life,0,100);
-      // Invulnerabilidad breve
+
+      // Invulnerabilidad breve — evitar "transparente" por tweens superpuestos
       this.invuln=true;
-      this.cameras.main.shake(160,0.02);
-      this.tweens.add({targets:this.player,alpha:0.2,yoyo:true,repeat:6,duration:90});
-      this.time.delayedCall(800,()=>{this.invuln=false; this.player.setAlpha(1);});
+      if(this.invulnTween){ this.invulnTween.stop(); this.tweens.killTweensOf(this.player); }
+      this.player.setAlpha(1);
+      this.invulnTween = this.tweens.add({
+        targets:this.player, alpha:0.25, yoyo:true, repeat:6, duration:90,
+        onComplete:()=>{ this.player.setAlpha(1); this.invulnTween=null; }
+      });
+      this.time.delayedCall(800,()=>{ this.invuln=false; this.player.setAlpha(1); });
 
       if(gameState.life<=0){ this.gameOver(); }
     }
@@ -299,6 +317,7 @@ this.hud.add([
     gameOver(){ this.scene.start('GameOver',{score:gameState.score}); }
   }
 
+  /* ================== GAME OVER ================== */
   class GameOver extends Phaser.Scene{
     constructor(){super('GameOver')}
     init(data){ this.finalScore=data?.score||0; }
