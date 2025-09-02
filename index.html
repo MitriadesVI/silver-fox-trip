@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-  <title>Street Racer</title>
+  <title>Los Viajes de la Zorra</title>
   <style>
     html,body{margin:0;height:100%;background:radial-gradient(ellipse at top,#0b2a3a 0%,#061b27 60%,#051420 100%);font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial}
     /* Contenedor ocupa toda la pantalla (móvil) */
@@ -34,6 +34,14 @@
       this.baseSpeed=220;
       this.playerSpeed=320;
       this.nitroActive=false;
+      // NUEVO: Sistema de estadísticas
+      this.stats = {
+        venecasRecogidas: 0,
+        powerupsRecogidos: 0,
+        cervezasChocadas: 0,
+        policiasEsquivados: 0,
+        policiasChocados: 0
+      };
     }
   }
   const gameState=new GameState(); gameState.reset();
@@ -52,6 +60,8 @@
       this.load.image('powerup','assets/powerup.png');  // bolsita (vida)
       this.load.image('veneca','assets/veneca.png');    // power-up (nitro)
       this.load.image('mainmenu','assets/mainmenu.png');// fondo del menú
+      // NUEVO: Asset para explosión
+      this.load.image('explosion','assets/explosion.png');
     }
     create(){ this.scene.start('MainMenu'); }
   }
@@ -67,7 +77,7 @@
 
       this.add.rectangle(GAME_W/2, GAME_H/2, GAME_W, GAME_H, 0x000000, 0.25);
 
-      this.add.text(GAME_W/2,70,'STREET RACER',{fontSize:'28px',fill:'#00ffff',stroke:'#001d1d',strokeThickness:6}).setOrigin(0.5);
+      this.add.text(GAME_W/2,70,'LOS VIAJES DE LA ZORRA',{fontSize:'24px',fill:'#00ffff',stroke:'#001d1d',strokeThickness:6}).setOrigin(0.5);
 
       const btn=this.add.text(GAME_W/2,300,'JUGAR',{
         fontSize:'26px',fill:'#ffff00',backgroundColor:'#006666',
@@ -213,11 +223,29 @@
     handleHit(player,item){
       if(this.invuln){ item.destroy(); return; }
       const data=item.getData('damage')||{life:-10};
+      const texture = item.texture.key;
+      
+      // NUEVO: Explosión para policías
+      if(texture === 'police' || texture === 'motopolice') {
+        this.createExplosion(item.x, item.y);
+        // Shake de cámara más fuerte para policías
+        this.cameras.main.shake(300, 0.02);
+      }
+      
       item.destroy();
+
+      // Conteo de estadísticas según tipo de objeto
+      if(texture === 'beer' || texture === 'whisky') {
+        gameState.stats.cervezasChocadas++;
+      } else if(texture === 'police') {
+        gameState.stats.policiasChocados++;
+      } else if(texture === 'motopolice') {
+        gameState.stats.policiasChocados++; // las motos también cuentan como policías
+      }
 
       gameState.life=Phaser.Math.Clamp(gameState.life+data.life,0,100);
 
-      // Invulnerabilidad breve — evitamos “alpha” colgada
+      // Invulnerabilidad breve – evitamos "alpha" colgada
       this.invuln=true;
       if(this.invulnTween){ this.invulnTween.stop(); this.tweens.killTweensOf(this.player); }
       this.player.setAlpha(1);
@@ -234,6 +262,8 @@
       power.destroy();
       gameState.life=Math.min(100,gameState.life+25);
       gameState.score+=200;
+      // NUEVO: Conteo de powerups recogidos
+      gameState.stats.powerupsRecogidos++;
       this.cameras.main.flash(180,255,255,255);
     }
     // Veneca: nitro +40 y puntos
@@ -241,21 +271,52 @@
       p.destroy();
       gameState.nitro=Math.min(100,gameState.nitro+40);
       gameState.score+=200;
+      // NUEVO: Conteo de venecas recogidas
+      gameState.stats.venecasRecogidas++;
       this.cameras.main.flash(120,0,255,180);
+    }
+
+    // NUEVO: Sistema de explosiones
+    createExplosion(x, y) {
+      const explosion = this.add.sprite(x, y, 'explosion').setDepth(5);
+      explosion.setScale(0.3);
+      explosion.setAlpha(0.9);
+      
+      // Animación de explosión
+      this.tweens.add({
+        targets: explosion,
+        scaleX: 0.8,
+        scaleY: 0.8,
+        alpha: 0,
+        duration: 400,
+        ease: 'Power2',
+        onComplete: () => explosion.destroy()
+      });
+      
+      // Flash rojo para explosiones
+      this.cameras.main.flash(200, 255, 100, 100);
     }
 
     update(time,dtMs){
       const dt=dtMs/1000;
 
+      // NUEVO: Sistema de niveles automático basado en puntuación
+      gameState.level = Math.floor(gameState.score / 2000) + 1;
+
       // Scroll carretera
       const scroll=(gameState.baseSpeed + (gameState.nitroActive&&gameState.nitro>0?220:0))*dt;
       this.road.tilePositionY -= scroll;
 
-      // Movimiento jugador
+      // ARREGLADO: Movimiento jugador CON nitro real
       let vx=0;
       if(this.cursors.left?.isDown||this.leftPressed) vx-=gameState.playerSpeed;
       if(this.cursors.right?.isDown||this.rightPressed) vx+=gameState.playerSpeed;
-      this.player.x=Phaser.Math.Clamp(this.player.x+vx*dt,CLAMP_X.min,CLAMP_X.max);
+      
+      // NUEVO: Aplicar multiplicador de velocidad cuando nitro está activo
+      const speedMultiplier = gameState.nitroActive && gameState.nitro > 0 ? 1.8 : 1.0;
+      const finalSpeed = vx * speedMultiplier;
+      
+      this.player.x=Phaser.Math.Clamp(this.player.x+finalSpeed*dt,CLAMP_X.min,CLAMP_X.max);
       this.player.setVelocity(0);
 
       // Nitro
@@ -274,11 +335,24 @@
       if(this.timers.pow>1500){ this.timers.pow=0; this.spawnPower(); }
       if(this.timers.ven>4200){ this.timers.ven=0; this.spawnVeneca(); }
       if(this.timers.pol>(5200 - Math.min(3000,gameState.level*250))){ this.timers.pol=0; this.spawnPolice(); }
-      if(this.timers.moto>(5000 - Math.min(2500,gameState.level*220))){ this.timers.moto=0; this.spawnMotoPolice(); }
+      // MEJORADO: Moto más frecuente desde nivel 2
+      if(this.timers.moto>(3000 - Math.min(2000,gameState.level*300))){ this.timers.moto=0; this.spawnMotoPolice(); }
 
       // IA Policía
       this.updatePoliceAI();
       this.updateMotoAI();
+
+      // NUEVO: Conteo de policías esquivados cuando pasan la pantalla
+      this.polices.children.iterate(pol => {
+        if(pol && pol.y > GAME_H + 80) {
+          gameState.stats.policiasEsquivados++;
+        }
+      });
+      this.motos.children.iterate(moto => {
+        if(moto && moto.y > GAME_H + 80) {
+          gameState.stats.policiasEsquivados++; // las motos también cuentan como policías esquivados
+        }
+      });
 
       // Puntuación y nivel
       gameState.score += Math.floor(40*dt) * (gameState.nitroActive?2:1);
@@ -317,21 +391,35 @@
       });
     }
 
-    gameOver(){ this.scene.start('GameOver',{score:gameState.score}); }
+    gameOver(){ this.scene.start('GameOver',{score:gameState.score, stats: gameState.stats}); }
   }
 
   /* ================== GAME OVER ================== */
   class GameOver extends Phaser.Scene{
     constructor(){super('GameOver')}
-    init(data){ this.finalScore=data?.score||0; }
+    init(data){ 
+      this.finalScore=data?.score||0; 
+      this.finalStats=data?.stats||{};
+    }
     create(){
       this.add.tileSprite(GAME_W/2,GAME_H/2,GAME_W,GAME_H,'road');
-      this.add.text(GAME_W/2,160,'GAME OVER',{fontSize:'44px',fill:'#ffdddd',stroke:'#700',strokeThickness:8}).setOrigin(0.5);
-      this.add.text(GAME_W/2,240,`PUNTOS: ${this.finalScore}`,{fontSize:'24px',fill:'#fff',stroke:'#000',strokeThickness:4}).setOrigin(0.5);
-      const btn=this.add.text(GAME_W/2,320,'REINTENTAR',{fontSize:'22px',fill:'#ffff00',backgroundColor:'#006600',padding:{x:20,y:10},stroke:'#fff',strokeThickness:1})
+      this.add.text(GAME_W/2,60,'GAME OVER',{fontSize:'44px',fill:'#ffdddd',stroke:'#700',strokeThickness:8}).setOrigin(0.5);
+      this.add.text(GAME_W/2,120,`PUNTOS: ${this.finalScore}`,{fontSize:'24px',fill:'#fff',stroke:'#000',strokeThickness:4}).setOrigin(0.5);
+      
+      // NUEVO: Mostrar estadísticas detalladas
+      const stats = this.finalStats;
+      this.add.text(GAME_W/2,170,'ESTADÍSTICAS',{fontSize:'20px',fill:'#00ffff',stroke:'#001d1d',strokeThickness:3}).setOrigin(0.5);
+      
+      this.add.text(GAME_W/2,200,`🏍️ Venecas recogidas: ${stats.venecasRecogidas || 0}`,{fontSize:'16px',fill:'#ffff80'}).setOrigin(0.5);
+      this.add.text(GAME_W/2,220,`💊 Powerups recogidos: ${stats.powerupsRecogidos || 0}`,{fontSize:'16px',fill:'#80ff80'}).setOrigin(0.5);
+      this.add.text(GAME_W/2,240,`🍺 Cervezas chocadas: ${stats.cervezasChocadas || 0}`,{fontSize:'16px',fill:'#ff8080'}).setOrigin(0.5);
+      this.add.text(GAME_W/2,260,`👮 Policías esquivados: ${stats.policiasEsquivados || 0}`,{fontSize:'16px',fill:'#8080ff'}).setOrigin(0.5);
+      this.add.text(GAME_W/2,280,`💥 Policías chocados: ${stats.policiasChocados || 0}`,{fontSize:'16px',fill:'#ff4040'}).setOrigin(0.5);
+
+      const btn=this.add.text(GAME_W/2,340,'REINTENTAR',{fontSize:'22px',fill:'#ffff00',backgroundColor:'#006600',padding:{x:20,y:10},stroke:'#fff',strokeThickness:1})
         .setOrigin(0.5).setInteractive({useHandCursor:true});
       btn.on('pointerdown',()=>this.scene.start('Game'));
-      const menu=this.add.text(GAME_W/2,370,'MENÚ',{fontSize:'20px',fill:'#ffff00',backgroundColor:'#333300',padding:{x:15,y:8},stroke:'#fff',strokeThickness:1})
+      const menu=this.add.text(GAME_W/2,390,'MENÚ',{fontSize:'20px',fill:'#ffff00',backgroundColor:'#333300',padding:{x:15,y:8},stroke:'#fff',strokeThickness:1})
         .setOrigin(0.5).setInteractive({useHandCursor:true});
       menu.on('pointerdown',()=>this.scene.start('MainMenu'));
     }
