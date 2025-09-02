@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+  <title>Street Racer</title>
+  <style>
+    html,body{margin:0;height:100%;background:radial-gradient(ellipse at top,#0b2a3a 0%,#061b27 60%,#051420 100%);font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial}
+    #gameContainer{width:100%;max-width:520px;margin:0 auto;padding:12px;box-sizing:border-box}
+    canvas{display:block;margin:0 auto;border-radius:14px;box-shadow:0 0 0 4px #00e0e0, 0 0 28px rgba(0,224,224,.35) inset}
+  </style>
+</head>
+<body>
+  <div id="gameContainer"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+  <script>
+  const GAME_W=480,GAME_H=800;
+  const LANES=[80,240,400];
+  const CLAMP_X={min:50,max:430};
+
+  // Estado
+  class GameState{
+    reset(){
+      this.life=100;           // Vida inicial
+      this.nitro=100;
+      this.score=0;
+      this.level=1;
+      this.baseSpeed=220;
+      this.playerSpeed=320;
+      this.nitroActive=false;
+    }
+  }
+  const gameState=new GameState(); gameState.reset();
+
+  class Preload extends Phaser.Scene{
+    constructor(){super('Preload')}
+    preload(){
+      // TUS ASSETS
+      this.load.image('road','assets/road.png');
+      this.load.image('player','assets/car.png');
+      this.load.image('beer','assets/stella.png');      // cerveza Stella
+      this.load.image('whisky','assets/whisky.png');
+      this.load.image('police','assets/police.png');
+      this.load.image('motopolice','assets/motopolice.png'); // moto
+      this.load.image('powerup','assets/powerup.png');  // bolsita (vida)
+      this.load.image('veneca','assets/veneca.png');    // power-up nuevo
+    }
+    create(){ this.scene.start('MainMenu'); }
+  }
+
+  class MainMenu extends Phaser.Scene{
+    constructor(){super('MainMenu')}
+    create(){
+      this.add.tileSprite(GAME_W/2,GAME_H/2,GAME_W,GAME_H,'road');
+      this.add.text(GAME_W/2,70,'STREET RACER',{fontSize:'28px',fill:'#00ffff',stroke:'#001d1d',strokeThickness:6}).setOrigin(0.5);
+      const btn=this.add.text(GAME_W/2,300,'JUGAR',{fontSize:'26px',fill:'#ffff00',backgroundColor:'#006666',padding:{x:20,y:10},stroke:'#ffffff',strokeThickness:2})
+        .setOrigin(0.5).setInteractive({useHandCursor:true});
+      btn.on('pointerdown',()=>this.scene.start('Game'));
+      this.add.text(GAME_W/2,360,'Móvil: arrastra el coche o toca los lados.\nBotón NITRO a la derecha.',{fontSize:'14px',fill:'#e0ffff',align:'center'}).setOrigin(0.5)
+    }
+  }
+
+  class Game extends Phaser.Scene{
+    constructor(){super('Game')}
+    init(){
+      gameState.reset();
+      this.invuln=false;
+      this.dragging=false;
+      this.leftPressed=false; this.rightPressed=false;
+      this.timers={obs:0,pow:0,ven:0,pol:0,moto:0};
+    }
+    create(){
+      // Carretera completa
+      this.road=this.add.tileSprite(GAME_W/2,GAME_H/2,GAME_W,GAME_H,'road');
+
+      // Jugador
+      this.player=this.physics.add.sprite(GAME_W/2,GAME_H-120,'player').setDepth(2);
+      this.player.setSize(this.player.width*0.42,this.player.height*0.6,true);
+
+      // Grupos
+      this.beers=this.physics.add.group();
+      this.whiskys=this.physics.add.group();
+      this.powerups=this.physics.add.group();    // powerup.png (vida)
+      this.venecas=this.physics.add.group();     // veneca.png (nitro)
+      this.polices=this.physics.add.group();
+      this.motos=this.physics.add.group();
+
+      // Colisiones
+      this.physics.add.overlap(this.player,this.beers,(p,o)=>this.handleHit(p,o),null,this);
+      this.physics.add.overlap(this.player,this.whiskys,(p,o)=>this.handleHit(p,o),null,this);
+      this.physics.add.overlap(this.player,this.polices,(p,o)=>this.handleHit(p,o),null,this);
+      this.physics.add.overlap(this.player,this.motos,(p,o)=>this.handleHit(p,o),null,this);
+      this.physics.add.overlap(this.player,this.powerups,(p,o)=>this.handleCollectPowerUp(p,o),null,this);
+      this.physics.add.overlap(this.player,this.venecas,(p,o)=>this.handleCollectVeneca(p,o),null,this);
+
+      // HUD (reemplazar bloque actual)
+this.hud = this.add.container(0, 0).setDepth(10);
+
+// fondo del HUD
+const hudBg = this.add.rectangle(0, 0, GAME_W, 90, 0x000d0d, 0.45).setOrigin(0);
+this.hud.add(hudBg);
+
+// textos
+this.txtLife  = this.add.text(16, 12, 'Vida: 100', { fontSize:'18px', fill:'#00ffbf' });
+this.txtScore = this.add.text(16, 34, 'Puntos: 0', { fontSize:'18px', fill:'#ffffff' });
+this.txtLevel = this.add.text(16, 56, 'Nivel: 1',  { fontSize:'18px', fill:'#ffde59' });
+const nitroLbl = this.add.text(320, 10, 'Nitro',   { fontSize:'14px', fill:'#aaffff' });
+const vidaLbl  = this.add.text(320, 44, 'Vida',    { fontSize:'14px', fill:'#aaffff' });
+
+// barras
+this.barNitroBg = this.add.rectangle(320, 28, 140, 12, 0x003333).setOrigin(0,0);
+this.barNitro   = this.add.rectangle(320, 28, 140, 12, 0x00ffff).setOrigin(0,0);
+this.barLifeBg  = this.add.rectangle(320, 62, 140, 12, 0x330000).setOrigin(0,0);
+this.barLife    = this.add.rectangle(320, 62, 140, 12, 0xff4d4d).setOrigin(0,0);
+
+// agregar todo al container
+this.hud.add([
+  this.txtLife, this.txtScore, this.txtLevel,
+  nitroLbl, vidaLbl,
+  this.barNitroBg, this.barNitro,
+  this.barLifeBg,  this.barLife
+]);
+
+
+      // Controles
+      this.cursors=this.input.keyboard.createCursorKeys();
+      this.keyShift=this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
+
+      // Zonas táctiles
+      this.leftZone=this.add.zone(0,100,GAME_W/2-40,GAME_H-160).setOrigin(0,0).setInteractive();
+      this.rightZone=this.add.zone(GAME_W/2+40,100,GAME_W/2-40,GAME_H-160).setOrigin(0,0).setInteractive();
+      this.leftZone.on('pointerdown',()=>this.leftPressed=true);
+      this.leftZone.on('pointerup',()=>this.leftPressed=false);
+      this.leftZone.on('pointerout',()=>this.leftPressed=false);
+      this.rightZone.on('pointerdown',()=>this.rightPressed=true);
+      this.rightZone.on('pointerup',()=>this.rightPressed=false);
+      this.rightZone.on('pointerout',()=>this.rightPressed=false);
+
+      // Arrastre del coche
+      this.input.on('pointerdown',(p)=>{this.dragging=true; this.player.x=Phaser.Math.Clamp(p.x,CLAMP_X.min,CLAMP_X.max);});
+      this.input.on('pointermove',(p)=>{if(this.dragging){this.player.x=Phaser.Math.Clamp(p.x,CLAMP_X.min,CLAMP_X.max);}});
+      this.input.on('pointerup',()=>{this.dragging=false;});
+
+      // Botón Nitro
+      this.nitroBtn=this.add.rectangle(GAME_W-70,GAME_H-70,80,44,0x006666,0.6).setStrokeStyle(2,0x00ffff).setInteractive().setDepth(20);
+      this.add.text(this.nitroBtn.x,this.nitroBtn.y,'NITRO',{fontSize:'14px',color:'#fff'}).setOrigin(0.5).setDepth(21);
+      this.nitroHeld=false;
+      this.nitroBtn.on('pointerdown',()=>this.nitroHeld=true);
+      this.nitroBtn.on('pointerup',()=>this.nitroHeld=false);
+      this.nitroBtn.on('pointerout',()=>this.nitroHeld=false);
+    }
+
+    // Spawns
+    spawnItem(key, velocity, scale, group, startY=-50){
+      const x=Phaser.Utils.Array.GetRandom(LANES);
+      const spr=group.create(x,startY,key);
+      spr.setVelocityY(velocity + gameState.level*20);
+      spr.setScale(scale);
+      return spr;
+    }
+    spawnBeer(){
+      const it=this.spawnItem('beer',200,0.15,this.beers);
+      it.setData('damage',{life:-20}); // Stella −20
+    }
+    spawnWhisky(){
+      const it=this.spawnItem('whisky',240,0.15,this.whiskys);
+      it.setData('damage',{life:-25}); // Whisky −25
+    }
+    spawnPolice(){
+      const it=this.spawnItem('police',280,0.18,this.polices);
+      it.setData('damage',{life:-35}); // Policía −35
+      it.setData('isPolice',true);
+      it.setData('lateralSpeed',130 + gameState.level*15);
+    }
+    // Moto desde abajo; a veces persigue
+    spawnMotoPolice(){
+      if(gameState.level<2) return;
+      const it=this.spawnItem('motopolice',-220,0.20,this.motos,850); // sube
+      it.setData('damage',{life:-35});
+      it.setData('chase', Math.random()<0.35); // ocasional
+      return it;
+    }
+    // Bolsita: SIEMPRE VIDA y NO rota
+    spawnPower(){
+      const it=this.spawnItem('powerup',180,0.12,this.powerups);
+      it.setAngle(0); // sin rotación
+      return it;
+    }
+    // Veneca: nitro y puntos
+    spawnVeneca(){
+      const it=this.spawnItem('veneca',180,0.14,this.venecas);
+      return it;
+    }
+
+    handleHit(player,item){
+      if(this.invuln){ item.destroy(); return; }
+      const data=item.getData('damage')||{life:-10};
+      item.destroy();
+
+      gameState.life=Phaser.Math.Clamp(gameState.life+data.life,0,100);
+      // Invulnerabilidad breve
+      this.invuln=true;
+      this.cameras.main.shake(160,0.02);
+      this.tweens.add({targets:this.player,alpha:0.2,yoyo:true,repeat:6,duration:90});
+      this.time.delayedCall(800,()=>{this.invuln=false; this.player.setAlpha(1);});
+
+      if(gameState.life<=0){ this.gameOver(); }
+    }
+    // PowerUp: SIEMPRE vida +25
+    handleCollectPowerUp(player,power){
+      power.destroy();
+      gameState.life=Math.min(100,gameState.life+25);
+      gameState.score+=200;
+      this.cameras.main.flash(180,255,255,255);
+    }
+    // Veneca: nitro +40 y puntos
+    handleCollectVeneca(player,p){
+      p.destroy();
+      gameState.nitro=Math.min(100,gameState.nitro+40);
+      gameState.score+=200;
+      this.cameras.main.flash(120,0,255,180);
+    }
+
+    update(time,dtMs){
+      const dt=dtMs/1000;
+
+      // Scroll carretera
+      const scroll=(gameState.baseSpeed + (gameState.nitroActive&&gameState.nitro>0?220:0))*dt;
+      this.road.tilePositionY -= scroll;
+
+      // Movimiento jugador
+      let vx=0;
+      if(this.cursors.left?.isDown||this.leftPressed) vx-=gameState.playerSpeed;
+      if(this.cursors.right?.isDown||this.rightPressed) vx+=gameState.playerSpeed;
+      this.player.x=Phaser.Math.Clamp(this.player.x+vx*dt,CLAMP_X.min,CLAMP_X.max);
+      this.player.setVelocity(0);
+
+      // Nitro
+      gameState.nitroActive=this.nitroHeld||this.keyShift?.isDown;
+      if(gameState.nitroActive && gameState.nitro>0){
+        gameState.nitro=Math.max(0,gameState.nitro-25*dt);
+      }else{
+        gameState.nitroActive=false;
+        gameState.nitro=Math.min(100,gameState.nitro+10*dt);
+      }
+
+      // Spawns
+      this.timers.obs+=dtMs; this.timers.pow+=dtMs; this.timers.ven+=dtMs; this.timers.pol+=dtMs; this.timers.moto+=dtMs;
+      const base=650 - gameState.level*20;
+      if(this.timers.obs>Math.max(250,base)){ this.timers.obs=0; Math.random()<0.55?this.spawnBeer():this.spawnWhisky(); }
+      if(this.timers.pow>1500){ this.timers.pow=0; this.spawnPower(); }
+      if(this.timers.ven>4200){ this.timers.ven=0; this.spawnVeneca(); }
+      if(this.timers.pol>(5200 - Math.min(3000,gameState.level*250))){ this.timers.pol=0; this.spawnPolice(); }
+      if(this.timers.moto>(5000 - Math.min(2500,gameState.level*220))){ this.timers.moto=0; this.spawnMotoPolice(); }
+
+      // IA Policía
+      this.updatePoliceAI();
+      this.updateMotoAI();
+
+      // Puntuación y nivel
+      gameState.score += Math.floor(40*dt) * (gameState.nitroActive?2:1);
+      // HUD
+      this.txtLife.setText(`Vida: ${Math.round(gameState.life)}`);
+      this.txtScore.setText(`Puntos: ${gameState.score}`);
+      this.txtLevel.setText(`Nivel: ${gameState.level}`);
+      this.barNitro.width=140*(gameState.nitro/100);
+      this.barLife.width=140*(gameState.life/100);
+
+      // Limpieza
+      [this.beers,this.whiskys,this.polices,this.motos,this.powerups,this.venecas].forEach(g=>{
+        g.children.each(s=>{ if(s && (s.y>GAME_H+80 || s.y<-120)) s.destroy(); });
+      });
+    }
+
+    updatePoliceAI(){
+      this.polices.children.iterate(pol=>{
+        if(!pol) return;
+        const dx=this.player.x - pol.x;
+        const lat=pol.getData('lateralSpeed')||130;
+        pol.setVelocityX(Phaser.Math.Clamp(dx*2,-lat,lat));
+        const base=gameState.baseSpeed + 60 + gameState.level*30;
+        if(pol.y < this.player.y-220) pol.setVelocityY(base+120);
+        else if(pol.y > this.player.y-120) pol.setVelocityY(base-20);
+        else pol.setVelocityY(base);
+      });
+    }
+    updateMotoAI(){
+      this.motos.children.iterate(m=>{
+        if(!m) return;
+        // sube desde abajo con velocidad ya negativa
+        if(!m.getData('chase')){ m.setVelocityX(0); return; }
+        const dx=this.player.x - m.x;
+        const chase=100 + gameState.level*10;
+        m.setVelocityX(Phaser.Math.Clamp(dx*2,-chase,chase));
+      });
+    }
+
+    gameOver(){ this.scene.start('GameOver',{score:gameState.score}); }
+  }
+
+  class GameOver extends Phaser.Scene{
+    constructor(){super('GameOver')}
+    init(data){ this.finalScore=data?.score||0; }
+    create(){
+      this.add.tileSprite(GAME_W/2,GAME_H/2,GAME_W,GAME_H,'road');
+      this.add.text(GAME_W/2,160,'GAME OVER',{fontSize:'44px',fill:'#ffdddd',stroke:'#700',strokeThickness:8}).setOrigin(0.5);
+      this.add.text(GAME_W/2,240,`PUNTOS: ${this.finalScore}`,{fontSize:'24px',fill:'#fff',stroke:'#000',strokeThickness:4}).setOrigin(0.5);
+      const btn=this.add.text(GAME_W/2,320,'REINTENTAR',{fontSize:'22px',fill:'#ffff00',backgroundColor:'#006600',padding:{x:20,y:10},stroke:'#fff',strokeThickness:1})
+        .setOrigin(0.5).setInteractive({useHandCursor:true});
+      btn.on('pointerdown',()=>this.scene.start('Game'));
+      const menu=this.add.text(GAME_W/2,370,'MENÚ',{fontSize:'20px',fill:'#ffff00',backgroundColor:'#333300',padding:{x:15,y:8},stroke:'#fff',strokeThickness:1})
+        .setOrigin(0.5).setInteractive({useHandCursor:true});
+      menu.on('pointerdown',()=>this.scene.start('MainMenu'));
+    }
+  }
+
+  new Phaser.Game({
+    type:Phaser.AUTO, width:GAME_W, height:GAME_H, parent:'gameContainer',
+    backgroundColor:'#002233',
+    physics:{ default:'arcade', arcade:{ debug:false }},
+    scene:[Preload,MainMenu,Game,GameOver]
+  });
+  </script>
+</body>
+</html>
