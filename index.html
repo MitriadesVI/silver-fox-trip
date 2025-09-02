@@ -3,10 +3,15 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-  <title>Los viajes de la zorra</title>
+  <title>Street Racer</title>
   <style>
     html,body{margin:0;height:100%;background:radial-gradient(ellipse at top,#0b2a3a 0%,#061b27 60%,#051420 100%);font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial}
-    #gameContainer{width:100%;max-width:520px;margin:0 auto;padding:12px;box-sizing:border-box}
+    /* Contenedor ocupa toda la pantalla (móvil) */
+    #gameContainer{width:100vw;height:100vh;margin:0 auto;padding:0;box-sizing:border-box}
+    /* En desktop dejamos el marco bonito */
+    @media (min-width: 600px){
+      #gameContainer{max-width:520px;max-height:calc(100vh - 24px);padding:12px}
+    }
     canvas{display:block;margin:0 auto;border-radius:14px;box-shadow:0 0 0 4px #00e0e0, 0 0 28px rgba(0,224,224,.35) inset}
   </style>
 </head>
@@ -37,7 +42,7 @@
   class Preload extends Phaser.Scene{
     constructor(){super('Preload')}
     preload(){
-      // TUS ASSETS
+      // Assets
       this.load.image('road','assets/road.png');
       this.load.image('player','assets/car.png');
       this.load.image('beer','assets/stella.png');      // cerveza Stella
@@ -45,7 +50,7 @@
       this.load.image('police','assets/police.png');
       this.load.image('motopolice','assets/motopolice.png'); // moto
       this.load.image('powerup','assets/powerup.png');  // bolsita (vida)
-      this.load.image('veneca','assets/veneca.png');    // power-up nuevo (nitro)
+      this.load.image('veneca','assets/veneca.png');    // power-up (nitro)
       this.load.image('mainmenu','assets/mainmenu.png');// fondo del menú
     }
     create(){ this.scene.start('MainMenu'); }
@@ -60,10 +65,9 @@
       const s = Math.max(GAME_W / bg.width, GAME_H / bg.height);
       bg.setScale(s).setScrollFactor(0);
 
-      // oscurecer un poco para contraste
       this.add.rectangle(GAME_W/2, GAME_H/2, GAME_W, GAME_H, 0x000000, 0.25);
 
-      this.add.text(GAME_W/2,70,'LOS VIAJES DE LA ZORRA',{fontSize:'22px',fill:'#00ffff',stroke:'#001d1d',strokeThickness:6}).setOrigin(0.5);
+      this.add.text(GAME_W/2,70,'STREET RACER',{fontSize:'28px',fill:'#00ffff',stroke:'#001d1d',strokeThickness:6}).setOrigin(0.5);
 
       const btn=this.add.text(GAME_W/2,300,'JUGAR',{
         fontSize:'26px',fill:'#ffff00',backgroundColor:'#006666',
@@ -83,23 +87,23 @@
     init(){
       gameState.reset();
       this.invuln=false;
-      this.invulnTween=null;   // <— control tween para no dejar alpha colgada
+      this.invulnTween=null;   // para no dejar alpha colgada
       this.dragging=false;
       this.leftPressed=false; this.rightPressed=false;
       this.timers={obs:0,pow:0,ven:0,pol:0,moto:0};
     }
     create(){
-      // Carretera completa
+      // Carretera
       this.road=this.add.tileSprite(GAME_W/2,GAME_H/2,GAME_W,GAME_H,'road');
 
-      // === Jugador (tamaño antiguo + hitbox justa) ===
+      // Jugador (tamaño antiguo + hitbox justa)
       this.player = this.physics.add.sprite(GAME_W/2, GAME_H - 120, 'player').setDepth(2);
       this.player.setScale(0.20);
       const dw=this.player.displayWidth, dh=this.player.displayHeight;
       const bw=dw*0.42, bh=dh*0.60;
       this.player.body.setSize(bw,bh);
       this.player.body.setOffset((dw-bw)/2,(dh-bh)/2);
-      this.player.setAlpha(1); // por si vienes de un game over en medio de un blink
+      this.player.setAlpha(1);
 
       // Grupos
       this.beers=this.physics.add.group();
@@ -117,7 +121,7 @@
       this.physics.add.overlap(this.player,this.powerups,(p,o)=>this.handleCollectPowerUp(p,o),null,this);
       this.physics.add.overlap(this.player,this.venecas,(p,o)=>this.handleCollectVeneca(p,o),null,this);
 
-      // HUD
+      // HUD (container correcto)
       this.hud = this.add.container(0, 0).setDepth(10);
       const hudBg = this.add.rectangle(0, 0, GAME_W, 90, 0x000d0d, 0.45).setOrigin(0);
       this.hud.add(hudBg);
@@ -191,7 +195,7 @@
       if(gameState.level<2) return;
       const it=this.spawnItem('motopolice',-220,0.20,this.motos,850); // sube
       it.setData('damage',{life:-35});
-      it.setData('chase', Math.random()<0.50); // ocasional
+      it.setData('chase', Math.random()<0.35); // ocasional
       return it;
     }
     // Bolsita: SIEMPRE VIDA y NO rota
@@ -213,7 +217,7 @@
 
       gameState.life=Phaser.Math.Clamp(gameState.life+data.life,0,100);
 
-      // Invulnerabilidad breve — evitar "transparente" por tweens superpuestos
+      // Invulnerabilidad breve — evitamos “alpha” colgada
       this.invuln=true;
       if(this.invulnTween){ this.invulnTween.stop(); this.tweens.killTweensOf(this.player); }
       this.player.setAlpha(1);
@@ -306,7 +310,6 @@
     updateMotoAI(){
       this.motos.children.iterate(m=>{
         if(!m) return;
-        // sube desde abajo con velocidad ya negativa
         if(!m.getData('chase')){ m.setVelocityX(0); return; }
         const dx=this.player.x - m.x;
         const chase=100 + gameState.level*10;
@@ -334,11 +337,20 @@
     }
   }
 
+  /* ================== CONFIG: escala móvil ================== */
   new Phaser.Game({
-    type:Phaser.AUTO, width:GAME_W, height:GAME_H, parent:'gameContainer',
-    backgroundColor:'#002233',
+    type: Phaser.AUTO,
+    parent: 'gameContainer',
+    backgroundColor: '#002233',
     physics:{ default:'arcade', arcade:{ debug:false }},
-    scene:[Preload,MainMenu,Game,GameOver]
+    scene:[Preload,MainMenu,Game,GameOver],
+    scale: {
+      mode: Phaser.Scale.FIT,         // ajusta a la pantalla manteniendo aspecto
+      autoCenter: Phaser.Scale.CENTER_BOTH,
+      width: GAME_W,
+      height: GAME_H,
+      min: { width: 320, height: 480 } // seguridad en móviles muy pequeños
+    }
   });
   </script>
 </body>
