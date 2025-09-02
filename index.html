@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-  <title>Street Racer</title>
+  <title>Los viajes de la zorra</title>
   <style>
     html,body{margin:0;height:100%;background:radial-gradient(ellipse at top,#0b2a3a 0%,#061b27 60%,#051420 100%);font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial}
     #gameContainer{width:100%;max-width:520px;margin:0 auto;padding:12px;box-sizing:border-box}
@@ -63,7 +63,7 @@
       // oscurecer un poco para contraste
       this.add.rectangle(GAME_W/2, GAME_H/2, GAME_W, GAME_H, 0x000000, 0.25);
 
-      this.add.text(GAME_W/2,70,'STREET RACER',{fontSize:'28px',fill:'#00ffff',stroke:'#001d1d',strokeThickness:6}).setOrigin(0.5);
+      this.add.text(GAME_W/2,70,'LOS VIAJES DE LA ZORRA',{fontSize:'22px',fill:'#00ffff',stroke:'#001d1d',strokeThickness:6}).setOrigin(0.5);
 
       const btn=this.add.text(GAME_W/2,300,'JUGAR',{
         fontSize:'26px',fill:'#ffff00',backgroundColor:'#006666',
@@ -191,7 +191,7 @@
       if(gameState.level<2) return;
       const it=this.spawnItem('motopolice',-220,0.20,this.motos,850); // sube
       it.setData('damage',{life:-35});
-      it.setData('chase', Math.random()<0.35); // ocasional
+      it.setData('chase', Math.random()<0.50); // ocasional
       return it;
     }
     // Bolsita: SIEMPRE VIDA y NO rota
